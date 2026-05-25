@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestione Spedizioni MBE</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue-dark:   #1F4E79;
+    --blue-mid:    #2E75B6;
+    --blue-light:  #BDD7EE;
+    --blue-pale:   #D6E4F0;
+    --blue-ultra:  #EBF3FB;
+    --green:       #1D9E75;
+    --green-pale:  #E1F5EE;
+    --amber:       #BA7517;
+    --amber-pale:  #FAF0DC;
+    --gray-100:    #F5F6F7;
+    --gray-200:    #EAECEE;
+    --gray-300:    #D0D3D8;
+    --gray-500:    #7A8190;
+    --gray-700:    #3D4451;
+    --gray-900:    #1A1D23;
+    --white:       #FFFFFF;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   14px;
+    --shadow-sm:   0 1px 3px rgba(0,0,0,.08);
+    --shadow-md:   0 4px 12px rgba(0,0,0,.10);
+    --font:        'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  body {
+    font-family: var(--font);
+    background: var(--gray-100);
+    color: var(--gray-900);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; width: 220px;
+    background: var(--blue-dark);
+    display: flex; flex-direction: column;
+    z-index: 100; overflow-y: auto;
+  }
+  .sidebar-logo {
+    padding: 20px 18px 16px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+  .sidebar-logo h1 { font-size: 15px; font-weight: 700; color: #fff; letter-spacing: .3px; }
+  .sidebar-logo p  { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 2px; }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-section { padding: 8px 14px 4px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.35); text-transform: uppercase; letter-spacing: .8px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 18px; font-size: 13px; color: rgba(255,255,255,.7);
+    cursor: pointer; transition: background .15s, color .15s;
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+  .nav-item.active { background: rgba(255,255,255,.12); color: #fff; border-left-color: #63B3FF; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .sidebar-footer {
+    padding: 14px 18px;
+    border-top: 1px solid rgba(255,255,255,.1);
+    font-size: 11px; color: rgba(255,255,255,.35);
+  }
+
+  .main { margin-left: 220px; min-height: 100vh; }
+  .topbar {
+    background: var(--white); border-bottom: 1px solid var(--gray-200);
+    padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+    box-shadow: var(--shadow-sm);
+  }
+  .topbar-title { font-size: 16px; font-weight: 600; color: var(--gray-900); }
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+  .content { padding: 24px 28px; }
+
+  /* ── Sezioni (pagine) ── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--white); border-radius: var(--radius-lg);
+    border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px; border-bottom: 1px solid var(--gray-200);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-header h2 { font-size: 14px; font-weight: 600; color: var(--gray-900); }
+  .card-body { padding: 20px; }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--gray-300); border-radius: var(--radius-lg);
+    padding: 36px 20px; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s;
+    background: var(--gray-100);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--blue-mid); background: var(--blue-ultra);
+  }
+  .drop-zone svg { width: 36px; height: 36px; color: var(--gray-500); margin-bottom: 10px; }
+  .drop-zone p.primary { font-size: 15px; font-weight: 600; color: var(--gray-700); margin-bottom: 4px; }
+  .drop-zone p.secondary { font-size: 12px; color: var(--gray-500); }
+
+  /* ── Bottoni ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    border: 1px solid transparent; transition: all .15s;
+    text-decoration: none; white-space: nowrap;
+  }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--blue-dark); color: #fff; border-color: var(--blue-dark); }
+  .btn-primary:hover { background: var(--blue-mid); border-color: var(--blue-mid); }
+  .btn-secondary { background: var(--white); color: var(--gray-700); border-color: var(--gray-300); }
+  .btn-secondary:hover { background: var(--gray-100); border-color: var(--gray-500); }
+  .btn-success { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn-success:hover { opacity: .9; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  /* ── Pill / Badge ── */
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500;
+  }
+  .pill-blue { background: var(--blue-pale); color: var(--blue-dark); }
+  .pill-green { background: var(--green-pale); color: var(--green); }
+  .pill-gray { background: var(--gray-200); color: var(--gray-700); }
+  .pill-amber { background: var(--amber-pale); color: var(--amber); }
+
+  /* ── Summary bar ── */
+  .summary-bar {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--white); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-md); padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .stat-card .label { font-size: 11px; color: var(--gray-500); font-weight: 500; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+  .stat-card .value { font-size: 22px; font-weight: 700; color: var(--gray-900); line-height: 1; }
+  .stat-card .sub   { font-size: 11px; color: var(--gray-500); margin-top: 4px; }
+
+  /* ── File tags ── */
+  .file-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .file-tag {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; background: var(--white); border: 1px solid var(--gray-200);
+    border-radius: var(--radius-sm); font-size: 12px; color: var(--gray-700);
+  }
+  .file-tag svg { width: 12px; height: 12px; color: var(--blue-mid); }
+
+  /* ── Sezione Resoconti / Spedizioni ── */
+  .section-block { margin-bottom: 28px; }
+  .section-label {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; border-radius: var(--radius-md) var(--radius-md) 0 0;
+    font-size: 13px; font-weight: 600; color: #fff;
+  }
+  .section-label.blue  { background: var(--blue-dark); }
+  .section-label.green { background: var(--green); }
+  .section-label .count { font-size: 11px; font-weight: 400; opacity: .75; margin-left: auto; }
+
+  .group-block { margin-bottom: 0; border: 1px solid var(--gray-200); border-top: none; }
+  .group-block:last-child { border-radius: 0 0 var(--radius-md) var(--radius-md); overflow: hidden; }
+
+  .sigla-header {
+    padding: 7px 14px; background: var(--blue-mid);
+    font-size: 12px; font-weight: 600; color: #fff;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sigla-header .sigla-meta { font-weight: 400; opacity: .7; margin-left: auto; font-size: 11px; }
+
+  .cliente-header {
+    padding: 6px 14px; background: var(--blue-pale);
+    font-size: 12px; font-weight: 600; color: var(--blue-dark);
+    border-top: 1px solid var(--blue-light);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cliente-header .cliente-meta { font-weight: 400; opacity: .7; font-size: 11px; margin-left: auto; }
+
+  /* ── Tabella ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+  thead tr { background: #EBF3FB; }
+  thead th {
+    padding: 7px 10px; text-align: left; font-size: 11px; font-weight: 600;
+    color: var(--blue-dark); border-bottom: 2px solid var(--blue-light);
+    white-space: nowrap;
+  }
+  thead th.right { text-align: right; }
+  tbody tr { border-bottom: 1px solid var(--gray-200); }
+  tbody tr:nth-child(even) { background: var(--gray-100); }
+  tbody tr:hover { background: var(--blue-ultra); }
+  td {
+    padding: 6px 10px; color: var(--gray-700);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  td.right { text-align: right; font-variant-numeric: tabular-nums; }
+  td.note  { color: var(--gray-500); font-style: italic; font-size: 11px; }
+  td.amber { color: var(--amber); font-weight: 600; }
+  tr.total-row { background: var(--blue-light) !important; }
+  tr.total-row td { font-weight: 700; color: var(--blue-dark); border-top: 2px solid var(--blue-mid); }
+  tr.grand-total { background: var(--blue-dark) !important; }
+  tr.grand-total td { font-weight: 700; color: #fff; }
+
+  /* ── Controlli filtro ── */
+  .controls-bar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 12px 16px; background: var(--gray-100); border-bottom: 1px solid var(--gray-200);
+  }
+  .controls-bar label { font-size: 12px; color: var(--gray-500); }
+  .controls-bar select,
+  .controls-bar input[type="text"] {
+    padding: 5px 10px; border: 1px solid var(--gray-300); border-radius: var(--radius-sm);
+    font-size: 12px; color: var(--gray-700); background: var(--white);
+    outline: none; transition: border-color .15s;
+  }
+  .controls-bar select:focus,
+  .controls-bar input[type="text"]:focus { border-color: var(--blue-mid); }
+  .controls-bar .spacer { flex: 1; }
+  .row-count { font-size: 12px; color: var(--gray-500); }
+
+  /* ── Toolbar export ── */
+  .export-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 20px; background: var(--white);
+    border: 1px solid var(--gray-200); border-radius: var(--radius-lg);
+    margin-bottom: 20px; box-shadow: var(--shadow-sm);
+  }
+  .export-bar p { font-size: 13px; color: var(--gray-500); flex: 1; }
+  .export-bar strong { color: var(--gray-900); }
+
+  /* ── Empty / loading state ── */
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    color: var(--gray-500); font-size: 14px;
+  }
+  .empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: .4; }
+  .empty-state p { margin-bottom: 6px; }
+  .empty-state .sub { font-size: 12px; }
+
+  /* ── Sezione Clienti ── */
+  .clienti-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--gray-200);
+  }
+  .clienti-toolbar input { padding: 6px 11px; border: 1px solid var(--gray-300); border-radius: var(--radius-sm); font-size: 13px; width: 220px; outline: none; }
+  .clienti-toolbar input:focus { border-color: var(--blue-mid); }
+  .clienti-stats { font-size: 12px; color: var(--gray-500); margin-left: auto; }
+  .clienti-stats strong { color: var(--gray-900); }
+
+  .clienti-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 10px; padding: 20px;
+  }
+  .cliente-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: var(--radius-md);
+    border: 1px solid var(--gray-200); background: var(--white);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .cliente-card:hover { border-color: var(--gray-300); box-shadow: var(--shadow-sm); }
+  .cliente-card.disabled { background: #FFF5F5; border-color: #FECACA; opacity: .85; }
+
+  .cliente-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .cliente-avatar.res  { background: var(--blue-pale);  color: var(--blue-dark); }
+  .cliente-avatar.sped { background: var(--green-pale);  color: var(--green); }
+  .cliente-avatar.disabled { background: #FEE2E2; color: #DC2626; }
+
+  .cliente-info { flex: 1; min-width: 0; }
+  .cliente-info .nome { font-size: 13px; font-weight: 500; color: var(--gray-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cliente-info .meta { font-size: 11px; color: var(--gray-500); margin-top: 2px; }
+
+  .toggle-btn {
+    flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    cursor: pointer; border: 1.5px solid transparent; transition: all .15s; user-select: none;
+  }
+  .toggle-btn.si  { background: var(--green-pale); color: var(--green); border-color: #A7F3D0; }
+  .toggle-btn.si:hover  { background: #D1FAE5; }
+  .toggle-btn.no  { background: #FEE2E2; color: #DC2626; border-color: #FECACA; }
+  .toggle-btn.no:hover  { background: #FECACA; }
+  .toggle-btn svg { width: 13px; height: 13px; }
+
+  .clienti-section-title {
+    padding: 8px 20px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .6px; color: var(--gray-500);
+    background: var(--gray-100); border-bottom: 1px solid var(--gray-200);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .clienti-section-title span { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+  .toggle-btn.modo-uni { background: var(--blue-pale); color: var(--blue-dark); border-color: #93C5FD; }
+  .toggle-btn.modo-uni:hover { background: #BFDBFE; }
+  .toggle-btn.modo-sep { background: #FEF3C7; color: #92400E; border-color: #FCD34D; }
+  .toggle-btn.modo-sep:hover { background: #FDE68A; }
+
+  /* ── Storico ── */
+  .storico-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:12px; padding:20px; }
+  .storico-card {
+    background:var(--white); border:1px solid var(--gray-200); border-radius:var(--radius-md);
+    padding:14px 16px; cursor:pointer; transition: border-color .15s, box-shadow .15s;
+  }
+  .storico-card:hover { border-color:var(--blue-mid); box-shadow:var(--shadow-sm); }
+  .storico-card .sett { font-size:18px; font-weight:700; color:var(--blue-dark); }
+  .storico-card .data { font-size:11px; color:var(--gray-500); margin-top:2px; }
+  .storico-card .meta { font-size:12px; color:var(--gray-700); margin-top:8px; }
+  .storico-card .badge-sett { display:inline-block; background:var(--blue-pale); color:var(--blue-dark); font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px; margin-bottom:6px; }
+
+  .fb-ok   { color: #4ADE80 !important; }
+  .fb-err  { color: #F87171 !important; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--gray-900); color: #fff;
+    padding: 10px 18px; border-radius: var(--radius-md);
+    font-size: 13px; font-weight: 500;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .sidebar { width: 200px; }
+    .main { margin-left: 200px; }
+    .content { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <h1>MBE Manager</h1>
+    <p>Gestione Spedizioni</p>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Principale</div>
+    <div class="nav-item active" onclick="showSection('carica')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Carica file
+    </div>
+    <div class="nav-item" onclick="showSection('resoconti')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Resoconti
+    </div>
+    <div class="nav-item" onclick="showSection('spedizioni')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+      Spedizioni
+    </div>
+    <div class="nav-item" onclick="showSection('clienti')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Clienti
+      <span id="nav-clienti-badge" style="margin-left:auto;background:rgba(255,255,255,.15);color:rgba(255,255,255,.8);font-size:10px;padding:1px 6px;border-radius:10px;display:none;"></span>
+    </div>
+    <div class="nav-item" onclick="showSection('storico')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Storico
+      <span id="nav-storico-badge" style="margin-left:auto;background:rgba(255,255,255,.15);color:rgba(255,255,255,.8);font-size:10px;padding:1px 6px;border-radius:10px;display:none;"></span>
+    </div>
+    <div class="nav-section" style="margin-top:12px;">Esporta</div>
+    <div class="nav-item" onclick="exportExcel()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Scarica Excel
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    v2.0 — MBE 2026
+    <div id="fb-status" style="margin-top:5px;font-size:10px;color:rgba(255,255,255,.3);">⬤ connessione...</div>
+  </div>
+</aside>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <span class="topbar-title" id="topbar-title">Carica file Excel</span>
+    <div class="topbar-actions">
+      <span id="topbar-files" style="font-size:12px;color:var(--gray-500);"></span>
+      <button class="btn btn-success" onclick="exportExcel()" id="btn-export" style="display:none;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Scarica Excel
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ── SEZIONE: Carica ── -->
+    <section class="section active" id="sec-carica">
+      <div class="card" style="max-width:600px;">
+        <div class="card-header"><h2>Carica file Excel</h2></div>
+        <div class="card-body">
+          <div class="drop-zone" id="drop-zone"
+            onclick="document.getElementById('fileInput').click()"
+            ondragover="dzOver(event)" ondragleave="dzLeave(event)" ondrop="dzDrop(event)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p class="primary">Trascina i file qui</p>
+            <p class="secondary">oppure clicca per selezionarli · fino a 5 file .xlsx</p>
+          </div>
+          <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none" onchange="loadFiles(this.files)">
+          <div id="file-tags-carica" class="file-tags" style="margin-top:14px;"></div>
+          <div id="load-status" style="font-size:13px;color:var(--gray-500);margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div id="summary-section" style="display:none;margin-top:20px;">
+        <div class="summary-bar" id="summary-bar"></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-primary" onclick="showSection('resoconti')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+            Vai ai Resoconti
+          </button>
+          <button class="btn btn-secondary" onclick="showSection('spedizioni')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/></svg>
+            Vai alle Spedizioni
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SEZIONE: Resoconti ── -->
+    <section class="section" id="sec-resoconti">
+      <div id="resoconti-empty" class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <p>Nessun dato caricato</p>
+        <p class="sub">Carica prima un file Excel dalla sezione "Carica file"</p>
+      </div>
+
+      <div id="resoconti-content" style="display:none;">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="controls-bar">
+            <label>Cerca</label>
+            <input type="text" id="search-res" placeholder="Filtra per nome, tracking..." oninput="renderResoconti()" style="width:200px;">
+            <label>Sigla</label>
+            <select id="filter-sigla" onchange="renderResoconti()">
+              <option value="">Tutte</option>
+            </select>
+            <div class="spacer"></div>
+            <span class="row-count" id="res-count"></span>
+          </div>
+        </div>
+        <div id="resoconti-body"></div>
+      </div>
+    </section>
+
+    <!-- ── SEZIONE: Spedizioni ── -->
+    <section class="section" id="sec-spedizioni">
+      <div id="spedizioni-empty" class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/></svg>
+        <p>Nessun dato caricato</p>
+        <p class="sub">Carica prima un file Excel dalla sezione "Carica file"</p>
+      </div>
+
+      <div id="spedizioni-content" style="display:none;">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="controls-bar">
+            <label>Cerca</label>
+            <input type="text" id="search-sped" placeholder="Filtra per nome, tracking..." oninput="renderSpedizioni()" style="width:200px;">
+            <label>Ordina per</label>
+            <select id="sort-sped" onchange="renderSpedizioni()">
+              <option value="Nominativo Cliente">Nome cliente</option>
+              <option value="Data Spedizione">Data spedizione</option>
+              <option value="Corriere">Corriere</option>
+              <option value="Prezzo Netto Totale">Prezzo netto</option>
+            </select>
+            <select id="sort-dir-sped" onchange="renderSpedizioni()">
+              <option value="asc">↑ Crescente</option>
+              <option value="desc">↓ Decrescente</option>
+            </select>
+            <div class="spacer"></div>
+            <span class="row-count" id="sped-count"></span>
+          </div>
+        </div>
+        <div id="spedizioni-body"></div>
+      </div>
+    </section>
+
+    <!-- ── SEZIONE: Clienti ── -->
+    <section class="section" id="sec-clienti">
+      <div class="card">
+        <div class="card-header">
+          <h2>Gestione Clienti</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="clienti-no-count" style="font-size:12px;color:#DC2626;font-weight:500;display:none;"></span>
+            <button class="btn btn-sm btn-secondary" onclick="resetAllClienti()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+              Ripristina tutti
+            </button>
+          </div>
+        </div>
+
+        <div id="clienti-empty" class="empty-state" style="padding:40px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <p>Nessun cliente ancora</p>
+          <p class="sub">Carica un file Excel per vedere la lista clienti</p>
+        </div>
+
+        <div id="clienti-main" style="display:none;">
+          <div class="clienti-toolbar">
+            <input type="text" id="search-clienti" placeholder="Cerca cliente..." oninput="renderClienti()">
+            <label style="font-size:12px;color:var(--gray-500);">Mostra</label>
+            <select id="filter-clienti-stato" onchange="renderClienti()" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius-sm);font-size:12px;">
+              <option value="">Tutti</option>
+              <option value="si">Solo SI</option>
+              <option value="no">Solo NO</option>
+            </select>
+            <select id="filter-clienti-tipo" onchange="renderClienti()" style="padding:6px 10px;border:1px solid var(--gray-300);border-radius:var(--radius-sm);font-size:12px;">
+              <option value="">Tutti i tipi</option>
+              <option value="res">Resoconti</option>
+              <option value="sped">Spedizioni</option>
+            </select>
+            <div class="clienti-stats" id="clienti-stats"></div>
+          </div>
+          <div id="clienti-grid-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── SEZIONE: Storico ── -->
+    <section class="section" id="sec-storico">
+      <div class="card">
+        <div class="card-header">
+          <h2>Storico settimane</h2>
+          <span id="storico-fb-label" style="font-size:12px;color:var(--gray-500);">Salvataggio automatico ad ogni caricamento</span>
+        </div>
+        <div id="storico-empty" class="empty-state" style="padding:40px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <p>Nessuno storico ancora</p>
+          <p class="sub">Carica un file Excel e salvalo per creare lo storico</p>
+        </div>
+        <div id="storico-content" style="display:none;">
+          <div id="storico-grid" class="storico-grid"></div>
+        </div>
+      </div>
+
+      <!-- Dettaglio settimana storica -->
+      <div id="storico-dettaglio" style="display:none;margin-top:20px;">
+        <div class="card">
+          <div class="card-header">
+            <h2 id="storico-dettaglio-title">Dettaglio settimana</h2>
+            <button class="btn btn-sm btn-secondary" onclick="chiudiDettaglio()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Chiudi
+            </button>
+          </div>
+          <div id="storico-dettaglio-body" style="padding:16px;overflow-x:auto;"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /content -->
+</main>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+//  DATI
+// ══════════════════════════════════════════════
+const COLS = [
+  'Data Spedizione','Nominativo Cliente','Destinatario','Stato Destinatario',
+  'Corriere','Tracking','Tracking MBE','Prezzo Netto Totale','Prezzo Lordo',
+  'Contrassegno','Note Interne'
+];
+const COL_W = [
+  '95px','170px','150px','100px','70px','130px','160px','90px','80px','80px','160px'
+];
+const PRICE_COLS = new Set(['Prezzo Netto Totale','Prezzo Lordo','Contrassegno']);
+
+let allRows = [], resocontiRows = [], spedizioniRows = [], fileDataList = [];
+
+// ══════════════════════════════════════════════
+//  NAVIGAZIONE
+// ══════════════════════════════════════════════
+const SECTIONS = {
+  'carica':     { el: 'sec-carica',     title: 'Carica file Excel' },
+  'resoconti':  { el: 'sec-resoconti',  title: 'Resoconti Settimanali' },
+  'spedizioni': { el: 'sec-spedizioni', title: 'Spedizioni Settimanali' },
+  'clienti':    { el: 'sec-clienti',    title: 'Gestione Clienti' },
+  'storico':    { el: 'sec-storico',    title: 'Storico Settimane' },
+};
+
+function showSection(name) {
+  Object.keys(SECTIONS).forEach(k => {
+    document.getElementById(SECTIONS[k].el).classList.toggle('active', k === name);
+  });
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (el.getAttribute('onclick') === `showSection('${name}')`) el.classList.add('active');
+  });
+  document.getElementById('topbar-title').textContent = SECTIONS[name]?.title || '';
+}
+
+// ══════════════════════════════════════════════
+//  DROP ZONE
+// ══════════════════════════════════════════════
+function dzOver(e)  { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function dzLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function dzDrop(e)  { e.preventDefault(); dzLeave(e); loadFiles(e.dataTransfer.files); }
+
+// ══════════════════════════════════════════════
+//  CARICAMENTO FILE
+// ══════════════════════════════════════════════
+
+// Ricava la settimana ISO dalla data più recente nelle spedizioni
+function getWeekFromRows(rows) {
+  let latest = null;
+  rows.forEach(r => {
+    const v = String(r['Data Spedizione'] || '').trim();
+    if (!v) return;
+    // Prova formati: DD/MM/YYYY, YYYY-MM-DD, o serial Excel
+    let d = null;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) {
+      const [dd,mm,yy] = v.split('/');
+      d = new Date(+yy, +mm-1, +dd);
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
+      d = new Date(v);
+    } else if (/^\d+$/.test(v)) {
+      // Serial Excel: giorni dal 1/1/1900
+      d = new Date(Date.UTC(1899,11,30) + +v * 86400000);
+    }
+    if (d && !isNaN(d) && (!latest || d > latest)) latest = d;
+  });
+  return latest || new Date();
+}
+
+let currentFileDate = new Date(); // data di riferimento del file caricato
+let currentWeek = getWeekNumber(new Date());
+let currentYear = new Date().getFullYear();
+function loadFiles(files) {
+  const arr = Array.from(files).filter(f => f.name.match(/\.xlsx?$/i)).slice(0, 5);
+  if (!arr.length) return;
+  allRows = [];
+  fileDataList = []; // reset lista per-file
+  const names = arr.map(f => f.name);
+  let done = 0;
+
+  document.getElementById('load-status').textContent = 'Caricamento in corso...';
+
+  arr.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb   = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      allRows = allRows.concat(data);
+      // Salva i dati per-file (solo spedizioni senza (), con nome file)
+      fileDataList.push({ name: file.name, rows: data });
+      if (++done === arr.length) processData(names);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function processData(names) {
+  const tagsEl = document.getElementById('file-tags-carica');
+  tagsEl.innerHTML = names.map(f => `
+    <span class="file-tag">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      ${f}
+    </span>`).join('');
+
+  // Calcola settimana dalle date delle spedizioni
+  currentFileDate = getWeekFromRows(allRows);
+  currentWeek = getWeekNumber(currentFileDate);
+  currentYear = currentFileDate.getFullYear();
+  const dd = String(currentFileDate.getDate()).padStart(2,'0');
+  const mm = String(currentFileDate.getMonth()+1).padStart(2,'0');
+
+  document.getElementById('load-status').innerHTML =
+    `${allRows.length} righe caricate da ${names.length} file &nbsp;·&nbsp;
+     <strong style="color:var(--blue-dark);">Settimana ${currentWeek} · ${currentYear}</strong>
+     <span style="color:var(--gray-500);font-size:12px;"> (data di riferimento: ${dd}/${mm}/${currentYear})</span>`;
+
+  resocontiRows  = allRows.filter(r =>  hasParen(r['Nominativo Cliente'] || ''));
+  spedizioniRows = allRows.filter(r => !hasParen(r['Nominativo Cliente'] || ''));
+
+  resocontiRows.sort((a,b) => sortKey(a['Nominativo Cliente']).localeCompare(sortKey(b['Nominativo Cliente']), 'it'));
+  spedizioniRows.sort((a,b) => String(a['Nominativo Cliente']||'').localeCompare(String(b['Nominativo Cliente']||''), 'it'));
+
+  const sigle = [...new Set(resocontiRows.map(r => getSigla(r['Nominativo Cliente']||'')||'~'))].sort();
+  const selSigla = document.getElementById('filter-sigla');
+  selSigla.innerHTML = '<option value="">Tutte</option>' +
+    sigle.map(s => `<option value="${s}">${s === '~' ? 'Senza sigla' : '(' + s + ')'}</option>`).join('');
+
+  const totN = allRows.reduce((s,r) => s + (parseFloat(r['Prezzo Netto Totale'])||0), 0);
+  const totL = allRows.reduce((s,r) => s + (parseFloat(r['Prezzo Lordo'])||0), 0);
+  const corrieri = new Set(allRows.map(r => r['Corriere'])).size;
+  document.getElementById('summary-bar').innerHTML = [
+    { label:'Spedizioni totali', value: allRows.length,         sub: `${names.length} file` },
+    { label:'Settimana',         value: `W${currentWeek}`,      sub: `Anno ${currentYear}` },
+    { label:'Resoconti',         value: resocontiRows.length,   sub: sigle.length + ' clienti con (' },
+    { label:'Spedizioni',        value: spedizioniRows.length,  sub: 'senza (' },
+    { label:'Netto totale',      value: '€ '+totN.toFixed(2),   sub: 'Lordo € '+totL.toFixed(2) },
+  ].map(c => `
+    <div class="stat-card">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.sub ? `<div class="sub">${c.sub}</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('summary-section').style.display = 'block';
+  document.getElementById('btn-export').style.display = '';
+  document.getElementById('topbar-files').textContent = `${allRows.length} righe · W${currentWeek}/${currentYear}`;
+
+  renderResoconti();
+  renderSpedizioni();
+  renderClienti();
+  showToast(`✓ ${allRows.length} spedizioni — Settimana ${currentWeek}`);
+
+  // Salvataggio automatico su Firebase
+  salvaStorico();
+}
+
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+function getSigla(n) { const m = String(n).match(/\(([^)]+)\)\s*$/); return m ? m[1].trim() : null; }
+function hasParen(n) { return String(n).includes('('); }
+function sortKey(n)  { return (getSigla(n)||'~') + '__' + String(n).toLowerCase(); }
+
+function fmtPrice(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  const n = parseFloat(v);
+  return isNaN(n) || n === 0 ? '' : '€\u00a0' + n.toLocaleString('it-IT', { minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+
+function tableHead() {
+  return `<thead><tr>${COLS.map((h,i) =>
+    `<th class="${PRICE_COLS.has(h)?'right':''}" style="width:${COL_W[i]}">${h}</th>`
+  ).join('')}</tr></thead>`;
+}
+
+function dataRow(r, i) {
+  return `<tr>${COLS.map(h => {
+    const val = r[h] ?? '';
+    let cls = PRICE_COLS.has(h) ? 'right' : '';
+    if (h === 'Note Interne' && val) cls = 'note';
+    if (h === 'Contrassegno' && parseFloat(val) > 0) cls = 'right amber';
+    const display = PRICE_COLS.has(h) ? fmtPrice(val) : escHtml(String(val));
+    return `<td class="${cls}" title="${escHtml(String(val))}">${display}</td>`;
+  }).join('')}</tr>`;
+}
+
+function totalRow(label, rows, cls='total-row') {
+  const totN = rows.reduce((s,r) => s+(parseFloat(r['Prezzo Netto Totale'])||0), 0);
+  const totL = rows.reduce((s,r) => s+(parseFloat(r['Prezzo Lordo'])||0), 0);
+  return `<tr class="${cls}">${COLS.map(h => {
+    if (h === 'Nominativo Cliente') return `<td>Totale ${escHtml(label)}</td>`;
+    if (h === 'Prezzo Netto Totale') return `<td class="right">€\u00a0${totN.toLocaleString('it-IT',{minimumFractionDigits:2})}</td>`;
+    if (h === 'Prezzo Lordo')        return `<td class="right">€\u00a0${totL.toLocaleString('it-IT',{minimumFractionDigits:2})}</td>`;
+    return `<td></td>`;
+  }).join('')}</tr>`;
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// Listener delegato per i bottoni nella griglia clienti
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === 'cliente') {
+    toggleCliente(btn.dataset.nome);
+  } else if (action === 'sigla') {
+    toggleSiglaModo(btn.dataset.sigla);
+  }
+});
+
+// ══════════════════════════════════════════════
+//  CLIENTI — localStorage
+// ══════════════════════════════════════════════
+//  CLIENTI — localStorage
+// ══════════════════════════════════════════════
+const LS_KEY       = 'mbe_clienti_disabilitati';
+const LS_KEY_SIGLA = 'mbe_sigla_separato'; // Set di sigle con totale SEPARATO (default = unico)
+
+function loadDisabilitati() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function saveDisabilitati(set) {
+  localStorage.setItem(LS_KEY, JSON.stringify([...set]));
+}
+function loadSiglaSeparato() {
+  try { return new Set(JSON.parse(localStorage.getItem(LS_KEY_SIGLA) || '[]')); }
+  catch { return new Set(); }
+}
+function saveSiglaSeparato(set) {
+  localStorage.setItem(LS_KEY_SIGLA, JSON.stringify([...set]));
+}
+
+let disabilitati  = loadDisabilitati();
+let siglaSeparato = loadSiglaSeparato(); // sigle in modalità "separato per nome"
+
+function toggleCliente(nome) {
+  if (disabilitati.has(nome)) disabilitati.delete(nome);
+  else disabilitati.add(nome);
+  saveDisabilitati(disabilitati);
+  updateNavBadge();
+  renderClienti();
+  renderResoconti();
+  renderSpedizioni();
+}
+
+function toggleSiglaModo(sigla) {
+  if (siglaSeparato.has(sigla)) siglaSeparato.delete(sigla);
+  else siglaSeparato.add(sigla);
+  saveSiglaSeparato(siglaSeparato);
+  renderClienti();
+  renderResoconti();
+}
+
+function resetAllClienti() {
+  disabilitati.clear();
+  saveDisabilitati(disabilitati);
+  updateNavBadge();
+  renderClienti();
+  renderResoconti();
+  renderSpedizioni();
+  showToast('✓ Tutti i clienti riattivati');
+}
+
+function updateNavBadge() {
+  const badge = document.getElementById('nav-clienti-badge');
+  const n = disabilitati.size;
+  if (n > 0) { badge.textContent = n + ' NO'; badge.style.display = ''; }
+  else badge.style.display = 'none';
+  const cnt = document.getElementById('clienti-no-count');
+  if (cnt) { cnt.textContent = n > 0 ? n + ' clienti esclusi' : ''; cnt.style.display = n > 0 ? '' : 'none'; }
+}
+
+// ══════════════════════════════════════════════
+//  RENDER CLIENTI
+// ══════════════════════════════════════════════
+function buildClientiList() {
+  const map = new Map();
+  allRows.forEach(r => {
+    const nome = String(r['Nominativo Cliente'] || '').trim();
+    if (!nome) return;
+    const tipo = hasParen(nome) ? 'res' : 'sped';
+    if (!map.has(nome)) map.set(nome, { tipo, sigla: getSigla(nome), count: 0 });
+    map.get(nome).count++;
+  });
+  return [...map.entries()]
+    .map(([nome, info]) => ({ nome, ...info }))
+    .sort((a, b) => {
+      if (a.tipo !== b.tipo) return a.tipo === 'res' ? -1 : 1;
+      return a.nome.localeCompare(b.nome, 'it');
+    });
+}
+
+function renderClienti() {
+  if (!allRows.length) return;
+  document.getElementById('clienti-empty').style.display = 'none';
+  document.getElementById('clienti-main').style.display = 'block';
+
+  const search = document.getElementById('search-clienti').value.toLowerCase();
+  const stato  = document.getElementById('filter-clienti-stato').value;
+  const tipo   = document.getElementById('filter-clienti-tipo').value;
+
+  let lista = buildClientiList().filter(c => {
+    if (search && !c.nome.toLowerCase().includes(search)) return false;
+    if (tipo === 'res'  && c.tipo !== 'res')  return false;
+    if (tipo === 'sped' && c.tipo !== 'sped') return false;
+    const isNo = disabilitati.has(c.nome);
+    if (stato === 'si' && isNo)  return false;
+    if (stato === 'no' && !isNo) return false;
+    return true;
+  });
+
+  const totSI = lista.filter(c => !disabilitati.has(c.nome)).length;
+  const totNO = lista.filter(c =>  disabilitati.has(c.nome)).length;
+  document.getElementById('clienti-stats').innerHTML =
+    `<strong>${lista.length}</strong> clienti · <span style="color:var(--green);font-weight:600;">${totSI} SI</span> · <span style="color:#DC2626;font-weight:600;">${totNO} NO</span>`;
+
+  const res  = lista.filter(c => c.tipo === 'res');
+  const sped = lista.filter(c => c.tipo === 'sped');
+
+  function avatarLetters(nome) {
+    const words = nome.replace(/[^a-zA-Z\s]/g,'').trim().split(/\s+/);
+    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+    return nome.substring(0,2).toUpperCase();
+  }
+
+  function cardHtml(c) {
+    const isNo    = disabilitati.has(c.nome);
+    const tipoCls = isNo ? 'disabled' : c.tipo;
+    const siglaTag = c.sigla
+      ? `<span style="background:var(--blue-pale);color:var(--blue-dark);font-size:10px;padding:1px 5px;border-radius:3px;margin-right:4px;">${c.sigla}</span>`
+      : '';
+    const tipoLabel = c.tipo === 'res' ? 'Resoconto' : 'Spedizione';
+    const sep = c.sigla ? siglaSeparato.has(c.sigla) : false;
+
+    const modoBtn = c.sigla ? `
+      <button class="toggle-btn ${sep ? 'modo-sep' : 'modo-uni'}"
+        style="font-size:11px;padding:4px 9px;margin-right:4px;"
+        data-action="sigla" data-sigla="${c.sigla}">
+        ${sep ? '≡ Separato' : '✓ Unico'}
+      </button>` : '';
+
+    return `
+      <div class="cliente-card ${isNo ? 'disabled' : ''}">
+        <div class="cliente-avatar ${tipoCls}">${avatarLetters(c.nome)}</div>
+        <div class="cliente-info">
+          <div class="nome">${siglaTag}${escHtml(c.nome)}</div>
+          <div class="meta">${tipoLabel} · ${c.count} spedizioni${c.sigla ? ` · totale <strong>${sep ? 'separato' : 'unico ('+c.sigla+')'}</strong>` : ''}</div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0;">
+          ${modoBtn}
+          <button class="toggle-btn ${isNo ? 'no' : 'si'}"
+            data-action="cliente" data-nome="${escAttr(c.nome)}">
+            ${isNo
+              ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> NO`
+              : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> SI`
+            }
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // Raggruppa i resoconti per sigla per mostrare il toggle a livello di sigla
+  const sigleUniche = [...new Set(res.filter(c => c.sigla).map(c => c.sigla))].sort();
+  const resSenzaSigla = res.filter(c => !c.sigla);
+
+  let html = '';
+  if (res.length) {
+    html += `<div class="clienti-section-title">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+      Resoconti <span>(clienti con "(")</span>
+    </div>`;
+
+    // Sezione per ogni sigla con intestazione gruppo + toggle modo
+    sigleUniche.forEach(sigla => {
+      const clientiSigla = res.filter(c => c.sigla === sigla);
+      const sep = siglaSeparato.has(sigla);
+      html += `<div style="padding:8px 20px 0;display:flex;align-items:center;gap:8px;">
+        <span style="background:var(--blue-pale);color:var(--blue-dark);font-size:12px;font-weight:600;padding:2px 10px;border-radius:4px;">(${sigla})</span>
+        <span style="font-size:12px;color:var(--gray-500);">${clientiSigla.length} clienti</span>
+        <button class="toggle-btn ${sep ? 'modo-sep' : 'modo-uni'}"
+          style="font-size:11px;padding:4px 10px;margin-left:4px;"
+          data-action="sigla" data-sigla="${sigla}">
+          ${sep ? '≡ Totale separato per nome' : `✓ Totale unico (${sigla})`}
+        </button>
+      </div>`;
+      html += `<div class="clienti-grid" style="padding-top:8px;">${clientiSigla.map(cardHtml).join('')}</div>`;
+    });
+
+    if (resSenzaSigla.length) {
+      html += `<div style="padding:8px 20px 0;"><span style="font-size:12px;color:var(--gray-500);">Senza sigla</span></div>`;
+      html += `<div class="clienti-grid">${resSenzaSigla.map(cardHtml).join('')}</div>`;
+    }
+  }
+
+  if (sped.length) {
+    html += `<div class="clienti-section-title" style="${res.length?'border-top:1px solid var(--gray-200);':''}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/></svg>
+      Spedizioni <span>(clienti senza "(")</span>
+    </div>
+    <div class="clienti-grid">${sped.map(cardHtml).join('')}</div>`;
+  }
+
+  if (!html) html = '<p style="padding:24px 20px;color:var(--gray-500);font-size:13px;">Nessun cliente trovato.</p>';
+  document.getElementById('clienti-grid-wrap').innerHTML = html;
+  updateNavBadge();
+}
+
+// ══════════════════════════════════════════════
+//  RENDER RESOCONTI
+// ══════════════════════════════════════════════
+function renderResoconti() {
+  if (!resocontiRows.length) return;
+  document.getElementById('resoconti-empty').style.display = 'none';
+  document.getElementById('resoconti-content').style.display = 'block';
+
+  const search      = document.getElementById('search-res').value.toLowerCase();
+  const filterSigla = document.getElementById('filter-sigla').value;
+
+  let rows = resocontiRows.filter(r => {
+    const nome = String(r['Nominativo Cliente']||'');
+    if (disabilitati.has(nome)) return false;
+    if (filterSigla) {
+      const s = getSigla(nome)||'~';
+      if (s !== filterSigla) return false;
+    }
+    if (search) return COLS.some(c => String(r[c]||'').toLowerCase().includes(search));
+    return true;
+  });
+
+  document.getElementById('res-count').textContent = rows.length + ' righe';
+
+  const sigle = [...new Set(rows.map(r => getSigla(String(r['Nominativo Cliente']||''))||'~'))].sort();
+  let html = '';
+
+  sigle.forEach(sigla => {
+    const gruppoSigla = rows.filter(r => (getSigla(String(r['Nominativo Cliente']||''))||'~') === sigla);
+    const labelSigla  = sigla === '~' ? 'Senza sigla' : `(${sigla})`;
+    const isSeparato  = sigla === '~' || siglaSeparato.has(sigla);
+
+    html += `<div class="section-block">`;
+    html += `<div class="section-label blue" style="display:flex;align-items:center;gap:10px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+      ${labelSigla}
+      ${sigla !== '~' ? `<span style="font-size:10px;padding:1px 7px;border-radius:10px;font-weight:500;background:rgba(255,255,255,.15);">${isSeparato ? 'separato per nome' : 'totale unico'}</span>` : ''}
+      <span class="count">${gruppoSigla.length} spedizioni</span>
+    </div>`;
+
+    html += `<div class="card" style="border-radius:0 0 var(--radius-lg) var(--radius-lg);">`;
+    html += `<div class="table-wrap"><table>${tableHead()}<tbody>`;
+
+    if (!isSeparato) {
+      // Totale unico: mostra tutte le righe ordinate per nome, poi 1 totale sigla
+      const righeOrd = [...gruppoSigla].sort((a,b) => String(a['Nominativo Cliente']||'').localeCompare(String(b['Nominativo Cliente']||''),'it'));
+      righeOrd.forEach((r, i) => { html += dataRow(r, i); });
+      html += totalRow(labelSigla, gruppoSigla, 'grand-total');
+    } else {
+      // Separato: intestazione cliente + righe + totale per ognuno
+      const clienti = [...new Set(gruppoSigla.map(r => r['Nominativo Cliente']))];
+      clienti.forEach(cliente => {
+        const righe = gruppoSigla.filter(r => r['Nominativo Cliente'] === cliente);
+        html += `<tr><td colspan="${COLS.length}" style="padding:0;">
+          <div class="cliente-header">
+            ${escHtml(cliente)}
+            <span class="cliente-meta">${righe.length} spedizioni</span>
+          </div>
+        </td></tr>`;
+        righe.forEach((r, i) => { html += dataRow(r, i); });
+        html += totalRow(cliente, righe);
+      });
+    }
+
+    html += `</tbody></table></div></div></div>`;
+  });
+
+  document.getElementById('resoconti-body').innerHTML = html || '<p style="padding:20px;color:var(--gray-500);">Nessun risultato.</p>';
+}
+
+// ══════════════════════════════════════════════
+//  RENDER SPEDIZIONI
+// ══════════════════════════════════════════════
+function renderSpedizioni() {
+  if (!spedizioniRows.length && !allRows.length) return;
+  document.getElementById('spedizioni-empty').style.display = 'none';
+  document.getElementById('spedizioni-content').style.display = 'block';
+
+  const search  = document.getElementById('search-sped').value.toLowerCase();
+  const sortCol = document.getElementById('sort-sped').value;
+  const sortDir = document.getElementById('sort-dir-sped').value;
+
+  let rows = spedizioniRows.filter(r => {
+    if (disabilitati.has(String(r['Nominativo Cliente']||''))) return false;
+    return !search || COLS.some(c => String(r[c]||'').toLowerCase().includes(search));
+  });
+
+  rows.sort((a, b) => {
+    const va = a[sortCol] ?? '', vb = b[sortCol] ?? '';
+    const na = parseFloat(va), nb = parseFloat(vb);
+    if (!isNaN(na) && !isNaN(nb)) return sortDir === 'asc' ? na - nb : nb - na;
+    return sortDir === 'asc'
+      ? String(va).localeCompare(String(vb), 'it')
+      : String(vb).localeCompare(String(va), 'it');
+  });
+
+  document.getElementById('sped-count').textContent = rows.length + ' righe';
+
+  let html = `<div class="section-block">`;
+  html += `<div class="section-label green">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/></svg>
+    Spedizioni settimanali
+    <span class="count">${rows.length} spedizioni</span>
+  </div>`;
+
+  html += `<div class="card" style="border-radius:0 0 var(--radius-lg) var(--radius-lg);">`;
+  html += `<div class="table-wrap"><table>${tableHead()}<tbody>`;
+  rows.forEach((r, i) => { html += dataRow(r, i); });
+  html += totalRow('generale', rows, 'grand-total');
+  html += `</tbody></table></div></div></div>`;
+
+  document.getElementById('spedizioni-body').innerHTML = html;
+}
+
+// ══════════════════════════════════════════════
+//  EXPORT EXCEL
+// ══════════════════════════════════════════════
+
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+const EXCEL_COL_W = [14, 30, 26, 16, 10, 20, 24, 14, 12, 12, 28];
+
+function rowData(r) {
+  return COLS.map(c => {
+    const v = r[c] ?? '';
+    if (PRICE_COLS.has(c)) { const n = parseFloat(v); return isNaN(n) ? '' : n; }
+    return v;
+  });
+}
+
+// Ricava il numero di foglio dal primo Tracking MBE disponibile nel file
+function sheetNameFromFile(fileRows) {
+  for (const r of fileRows) {
+    const v = String(r['Tracking MBE'] || '').trim();
+    // Tracking MBE tipicamente inizia con il numero del centro es. "599-XXX" oppure è solo numerico
+    const m = v.match(/^(\d+)/);
+    if (m) return m[1];
+  }
+  return 'Spedizioni';
+}
+
+// Assicura nomi foglio unici (Excel non accetta duplicati)
+function uniqueSheetName(base, usedNames) {
+  let name = base.substring(0, 31);
+  let i = 2;
+  while (usedNames.has(name)) { name = `${base.substring(0, 28)}_${i++}`; }
+  usedNames.add(name);
+  return name;
+}
+
+function exportExcel() {
+  if (!allRows.length) { showToast('⚠ Carica prima un file Excel'); return; }
+
+  const wb   = XLSX.utils.book_new();
+  const dd   = String(currentFileDate.getDate()).padStart(2,'0');
+  const mm   = String(currentFileDate.getMonth()+1).padStart(2,'0');
+  const yyyy = currentYear;
+  const settimana  = currentWeek;
+  const intestazione = `Settimana ${settimana} · ${yyyy}  —  spedizioni al ${dd}/${mm}/${yyyy}`;
+  const usedNames  = new Set();
+
+  // ── Foglio 1: Resoconti Settimanali (tutti i file unificati) ──
+  const aoa1 = [];
+  aoa1.push([intestazione, ...Array(COLS.length - 1).fill('')]);
+  aoa1.push(Array(COLS.length).fill(''));
+  aoa1.push([...COLS]);
+
+  const sigle = [...new Set(
+    resocontiRows
+      .filter(r => !disabilitati.has(String(r['Nominativo Cliente']||'')))
+      .map(r => getSigla(String(r['Nominativo Cliente']||'')) || '~')
+  )].sort();
+
+  sigle.forEach(sigla => {
+    const gruppoSigla = resocontiRows.filter(r =>
+      !disabilitati.has(String(r['Nominativo Cliente']||'')) &&
+      (getSigla(String(r['Nominativo Cliente']||'')) || '~') === sigla
+    );
+
+    if (sigla !== '~' && !siglaSeparato.has(sigla)) {
+      // ── TOTALE UNICO per sigla ──
+      const label = `(${sigla})`;
+      const dataStart = aoa1.length + 1;
+      gruppoSigla.sort((a,b) => String(a['Nominativo Cliente']||'').localeCompare(String(b['Nominativo Cliente']||''),'it'));
+      gruppoSigla.forEach(r => aoa1.push(rowData(r)));
+      const dataEnd = aoa1.length;
+      const totRow = Array(COLS.length).fill('');
+      totRow[0] = `Totale ${label}`;
+      totRow[7] = { f: `SUM(H${dataStart}:H${dataEnd})` };
+      totRow[8] = { f: `SUM(I${dataStart}:I${dataEnd})` };
+      aoa1.push(totRow);
+      aoa1.push(Array(COLS.length).fill(''));
+    } else {
+      // ── TOTALE SEPARATO per nome cliente (o senza sigla) ──
+      const clienti = [...new Set(gruppoSigla.map(r => r['Nominativo Cliente']))];
+      clienti.forEach(cliente => {
+        const righe = gruppoSigla.filter(r => r['Nominativo Cliente'] === cliente);
+        const dataStart = aoa1.length + 1;
+        righe.forEach(r => aoa1.push(rowData(r)));
+        const dataEnd = aoa1.length;
+        const totRow = Array(COLS.length).fill('');
+        totRow[0] = `Totale ${cliente}`;
+        totRow[7] = { f: `SUM(H${dataStart}:H${dataEnd})` };
+        totRow[8] = { f: `SUM(I${dataStart}:I${dataEnd})` };
+        aoa1.push(totRow);
+        aoa1.push(Array(COLS.length).fill(''));
+      });
+    }
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
+  ws1['!cols'] = EXCEL_COL_W.map(w => ({ wch: w }));
+  usedNames.add('Resoconti Settimanali');
+  XLSX.utils.book_append_sheet(wb, ws1, 'Resoconti Settimanali');
+
+  // ── Un foglio per ogni file: solo righe senza ( (spedizioni) ──
+  fileDataList.forEach(({ name, rows }) => {
+    const spedFile = rows.filter(r =>
+      !hasParen(String(r['Nominativo Cliente']||'')) &&
+      !disabilitati.has(String(r['Nominativo Cliente']||''))
+    );
+    if (!spedFile.length) return; // nessuna spedizione in questo file, salta
+
+    spedFile.sort((a,b) => String(a['Nominativo Cliente']||'').localeCompare(String(b['Nominativo Cliente']||''), 'it'));
+
+    const sheetBase = sheetNameFromFile(rows);
+    const sheetName = uniqueSheetName(sheetBase, usedNames);
+
+    const aoa = [];
+    aoa.push([intestazione, ...Array(COLS.length - 1).fill('')]);
+    aoa.push(Array(COLS.length).fill(''));
+    aoa.push([...COLS]);
+
+    const dataStart = aoa.length + 1;
+    spedFile.forEach(r => aoa.push(rowData(r)));
+    const dataEnd = aoa.length;
+
+    const totRow = Array(COLS.length).fill('');
+    totRow[0] = 'Totale generale';
+    totRow[7] = { f: `SUM(H${dataStart}:H${dataEnd})` };
+    totRow[8] = { f: `SUM(I${dataStart}:I${dataEnd})` };
+    aoa.push(totRow);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = EXCEL_COL_W.map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  XLSX.writeFile(wb, `resoconti_settimana_${settimana}_${yyyy}.xlsx`);
+  showToast(`✓ Excel scaricato — Settimana ${settimana}`);
+}
+
+// ══════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// Listener delegato per i bottoni nella griglia clienti
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  if (action === 'cliente') toggleCliente(btn.dataset.nome);
+  else if (action === 'sigla') toggleSiglaModo(btn.dataset.sigla);
+});
+</script>
+
+<script>
+// ══════════════════════════════════════════════
+//  FIREBASE
+// ══════════════════════════════════════════════
+firebase.initializeApp({
+  apiKey: "AIzaSyC6GNNR-G42yZpfiEXDTGRcicSyzs0YUPg",
+  authDomain: "resoconti-settimanali.firebaseapp.com",
+  projectId: "resoconti-settimanali",
+  storageBucket: "resoconti-settimanali.firebasestorage.app",
+  messagingSenderId: "1042820531486",
+  appId: "1:1042820531486:web:5e291b3e39838e7555f50f"
+});
+const db = firebase.firestore();
+
+// Stato connessione
+db.collection('_ping').doc('test').set({ ts: Date.now() })
+  .then(() => {
+    const el = document.getElementById('fb-status');
+    el.textContent = '⬤ Firebase connesso';
+    el.classList.add('fb-ok');
+  })
+  .catch(() => {
+    const el = document.getElementById('fb-status');
+    el.textContent = '⬤ offline (locale)';
+    el.classList.add('fb-err');
+  });
+
+// ── Carica impostazioni da Firebase ──
+async function loadImpostazioniCloud() {
+  try {
+    const docDis = await db.collection('impostazioni').doc('clienti').get();
+    if (docDis.exists) disabilitati = new Set(docDis.data().disabilitati || []);
+    const docSig = await db.collection('impostazioni').doc('sigle').get();
+    if (docSig.exists) siglaSeparato = new Set(docSig.data().separato || []);
+    saveDisabilitati(disabilitati);
+    saveSiglaSeparato(siglaSeparato);
+    updateNavBadge();
+    if (allRows.length) { renderClienti(); renderResoconti(); }
+  } catch(e) { console.warn('Firebase offline, uso localStorage', e); }
+}
+
+// ── Salva impostazioni su Firebase ──
+async function saveImpostazioniCloud() {
+  try {
+    await db.collection('impostazioni').doc('clienti').set({
+      disabilitati: [...disabilitati], aggiornato: new Date().toISOString()
+    });
+    await db.collection('impostazioni').doc('sigle').set({
+      separato: [...siglaSeparato], aggiornato: new Date().toISOString()
+    });
+  } catch(e) { console.warn('Salvataggio cloud fallito', e); }
+}
+
+// Patch: salva su cloud ad ogni toggle
+const _origToggleCliente = toggleCliente;
+toggleCliente = n => { _origToggleCliente(n); saveImpostazioniCloud(); };
+const _origToggleSigla = toggleSiglaModo;
+toggleSiglaModo = s => { _origToggleSigla(s); saveImpostazioniCloud(); };
+
+// ── Salva settimana corrente su Firebase (automatico) ──
+async function salvaStorico() {
+  if (!allRows.length) return;
+  const chiave = `${currentYear}-W${String(currentWeek).padStart(2,'0')}`;
+  const dd = String(currentFileDate.getDate()).padStart(2,'0');
+  const mm = String(currentFileDate.getMonth()+1).padStart(2,'0');
+
+  try {
+    await db.collection('storico').doc(chiave).set({
+      settimana: currentWeek,
+      anno: currentYear,
+      dataRiferimento: `${dd}/${mm}/${currentYear}`,
+      totaleRighe: allRows.length,
+      resoconti: resocontiRows.length,
+      spedizioni: spedizioniRows.length,
+      totaleNetto: allRows.reduce((s,r) => s+(parseFloat(r['Prezzo Netto Totale'])||0),0).toFixed(2),
+      salvatoIl: new Date().toISOString()
+    });
+
+    const colRef = db.collection('storico').doc(chiave).collection('righe');
+    const existing = await colRef.get();
+    if (!existing.empty) {
+      const del = db.batch();
+      existing.docs.forEach(d => del.delete(d.ref));
+      await del.commit();
+    }
+    for (let i = 0; i < allRows.length; i += 400) {
+      const batch = db.batch();
+      allRows.slice(i, i+400).forEach((row, j) => {
+        const rec = {};
+        COLS.forEach(c => { rec[c] = String(row[c] ?? ''); });
+        batch.set(colRef.doc(`r${i+j}`), rec);
+      });
+      await batch.commit();
+    }
+    showToast(`✓ Settimana ${currentWeek}/${currentYear} salvata`);
+    caricaStorico();
+  } catch(e) {
+    console.warn('Errore salvataggio storico:', e);
+  }
+}
+
+// ── Cancella settimana dallo storico ──
+async function cancellaStorico(chiave, evento) {
+  evento.stopPropagation();
+  if (!confirm(`Cancellare lo storico ${chiave}? L'operazione non è reversibile.`)) return;
+  try {
+    // Cancella righe
+    const colRef = db.collection('storico').doc(chiave).collection('righe');
+    const righe = await colRef.get();
+    const batch = db.batch();
+    righe.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    // Cancella documento
+    await db.collection('storico').doc(chiave).delete();
+    showToast(`✓ ${chiave} cancellato`);
+    document.getElementById('storico-dettaglio').style.display = 'none';
+    caricaStorico();
+  } catch(e) {
+    showToast('❌ Errore cancellazione: ' + e.message);
+  }
+}
+
+// ── Carica lista storico ──
+async function caricaStorico() {
+  try {
+    const snap = await db.collection('storico').orderBy('anno','desc').orderBy('settimana','desc').get();
+    const badge = document.getElementById('nav-storico-badge');
+    if (snap.empty) {
+      document.getElementById('storico-empty').style.display = 'block';
+      document.getElementById('storico-content').style.display = 'none';
+      badge.style.display = 'none';
+      return;
+    }
+    badge.textContent = snap.size; badge.style.display = '';
+    document.getElementById('storico-empty').style.display = 'none';
+    document.getElementById('storico-content').style.display = 'block';
+    document.getElementById('storico-grid').innerHTML = snap.docs.map(doc => {
+      const d = doc.data();
+      const id = doc.id;
+      return `<div class="storico-card" onclick="apriDettaglio('${id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="badge-sett">${d.anno} · W${String(d.settimana).padStart(2,'0')}</div>
+          <button onclick="cancellaStorico('${id}', event)"
+            style="background:none;border:none;cursor:pointer;color:var(--gray-300);padding:2px;font-size:16px;line-height:1;"
+            title="Cancella">✕</button>
+        </div>
+        <div class="sett">Settimana ${d.settimana}</div>
+        <div class="data">Ref. ${d.dataRiferimento || d.dataEstrazione || ''}</div>
+        <div class="meta">
+          ${d.totaleRighe} spedizioni · <strong>€ ${parseFloat(d.totaleNetto).toLocaleString('it-IT',{minimumFractionDigits:2})}</strong><br>
+          <span style="font-size:11px;color:var(--gray-500);">${d.resoconti} resoconti · ${d.spedizioni} spedizioni</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.warn('Errore storico', e); }
+}
+
+// ── Apri dettaglio: carica i dati nella vista live ──
+async function apriDettaglio(chiave) {
+  const det = document.getElementById('storico-dettaglio');
+  const body = document.getElementById('storico-dettaglio-body');
+  body.innerHTML = '<p style="color:var(--gray-500);font-size:13px;padding:16px;">Caricamento...</p>';
+  det.style.display = 'block';
+  det.scrollIntoView({ behavior:'smooth' });
+
+  try {
+    const meta = (await db.collection('storico').doc(chiave).get()).data();
+    document.getElementById('storico-dettaglio-title').textContent =
+      `Settimana ${meta.settimana} · ${meta.anno} — ${meta.dataRiferimento || meta.dataEstrazione || ''}`;
+
+    const righeSnap = await db.collection('storico').doc(chiave).collection('righe').get();
+    const righe = righeSnap.docs.map(d => d.data());
+    if (!righe.length) { body.innerHTML = '<p style="padding:16px;color:var(--gray-500);">Nessuna riga.</p>'; return; }
+
+    // Carica i dati nelle variabili live così Resoconti e Spedizioni si aggiornano
+    allRows = righe;
+    currentWeek = meta.settimana;
+    currentYear = meta.anno;
+    currentFileDate = new Date(meta.anno, 0, 1); // approssimazione, non usata per display storico
+
+    resocontiRows  = allRows.filter(r =>  hasParen(r['Nominativo Cliente'] || ''));
+    spedizioniRows = allRows.filter(r => !hasParen(r['Nominativo Cliente'] || ''));
+    resocontiRows.sort((a,b) => sortKey(a['Nominativo Cliente']).localeCompare(sortKey(b['Nominativo Cliente']),'it'));
+    spedizioniRows.sort((a,b) => String(a['Nominativo Cliente']||'').localeCompare(String(b['Nominativo Cliente']||''),'it'));
+
+    // Aggiorna filtri sigla
+    const sigle = [...new Set(resocontiRows.map(r => getSigla(r['Nominativo Cliente']||'')||'~'))].sort();
+    document.getElementById('filter-sigla').innerHTML = '<option value="">Tutte</option>' +
+      sigle.map(s => `<option value="${s}">${s==='~'?'Senza sigla':'('+s+')'}</option>`).join('');
+
+    renderResoconti();
+    renderSpedizioni();
+    renderClienti();
+
+    document.getElementById('topbar-files').textContent = `Storico W${currentWeek}/${currentYear} · ${allRows.length} righe`;
+    document.getElementById('btn-export').style.display = '';
+
+    // Mostra riepilogo nel dettaglio
+    const totN = righe.reduce((s,r) => s+(parseFloat(r['Prezzo Netto Totale'])||0),0);
+    const totL = righe.reduce((s,r) => s+(parseFloat(r['Prezzo Lordo'])||0),0);
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
+        <div class="stat-card"><div class="label">Spedizioni</div><div class="value">${righe.length}</div></div>
+        <div class="stat-card"><div class="label">Resoconti</div><div class="value">${resocontiRows.length}</div></div>
+        <div class="stat-card"><div class="label">Spedizioni</div><div class="value">${spedizioniRows.length}</div></div>
+        <div class="stat-card"><div class="label">Netto totale</div><div class="value" style="font-size:16px;">€ ${totN.toLocaleString('it-IT',{minimumFractionDigits:2})}</div></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="showSection('resoconti')">Vedi Resoconti</button>
+        <button class="btn btn-secondary" onclick="showSection('spedizioni')">Vedi Spedizioni</button>
+        <button class="btn btn-success" onclick="exportExcel()">Scarica Excel</button>
+      </div>`;
+
+    showToast(`✓ Caricato storico W${currentWeek}/${currentYear}`);
+  } catch(e) {
+    body.innerHTML = `<p style="padding:16px;color:#DC2626;">Errore: ${e.message}</p>`;
+  }
+}
+
+function chiudiDettaglio() {
+  document.getElementById('storico-dettaglio').style.display = 'none';
+}
+
+// Init al caricamento
+window.addEventListener('load', () => {
+  loadImpostazioniCloud();
+  caricaStorico();
+});
+</script>
+</body>
+</html>
